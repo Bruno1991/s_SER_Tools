@@ -9,6 +9,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import List, Optional, Tuple
 
+from .air_extractor import AirAppInfo, AirExtractor
+
 
 @dataclass
 class DecompileResult:
@@ -22,6 +24,8 @@ class DecompileResult:
     total_files_count: int
     success: bool
     error_message: Optional[str] = None
+    air_info: Optional[AirAppInfo] = None
+    air_result_dir: Optional[Path] = None
 
 
 class JavaEnvironment:
@@ -261,12 +265,27 @@ class ApkDecompiler:
                 manifest_file = cand
                 break
 
+        # Verificar se é um aplicativo Adobe AIR / Flash e extrair assets / SWF automaticamente
+        air_info = None
+        air_dir = None
+        if AirExtractor.is_air_apk(apk_path):
+            try:
+                print("\n[*] [Adobe AIR Detectado] Extraindo código ActionScript (.swf), extensões (ANEs) e assets...")
+                air_res = AirExtractor.extract_air_assets(apk_path, output_dir=output_dir / "air_extracted")
+                if air_res.success:
+                    air_info = air_res.app_info
+                    air_dir = air_res.output_dir
+                    print(f"[+] [Adobe AIR] SWF Principal: {air_res.main_swf_file.name if air_res.main_swf_file else 'N/A'}")
+                    print(f"[+] [Adobe AIR] Relatório e Guia FFDec gerados em: {air_res.report_file.resolve() if air_res.report_file else 'N/A'}")
+            except Exception as e_air:
+                print(f"[!] [Adobe AIR] Aviso ao extrair assets AIR: {e_air}")
+
         # Contagem de arquivos
         java_count = len(list(output_dir.rglob("*.java")))
         xml_count = len(list(output_dir.rglob("*.xml")))
         total_count = len([f for f in output_dir.rglob("*") if f.is_file()])
 
-        success = (res.returncode == 0 or java_count > 0)
+        success = (res.returncode == 0 or java_count > 0 or (air_info and air_info.is_air))
         err = res.stderr if res.returncode != 0 and java_count == 0 else None
 
         return DecompileResult(
@@ -280,6 +299,8 @@ class ApkDecompiler:
             total_files_count=total_count,
             success=success,
             error_message=err,
+            air_info=air_info,
+            air_result_dir=air_dir,
         )
 
     def launch_gui(self, apk_path: Optional[Path] = None) -> bool:

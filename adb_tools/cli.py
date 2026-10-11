@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Optional
 
 from .adb_client import AdbClient
+from .air_extractor import AirExtractor
 from .decompiler import ApkDecompiler
 from .extractor import ApkExtractor
 
@@ -113,7 +114,8 @@ def cmd_decompile(
 
     print(f"[+] APK localizado: {apk_file.resolve()} ({format_bytes(apk_file.stat().st_size)})")
 
-    target_out = out_dir or (apk_file.parent.parent.parent / "decompiled_sources" / apk_file.stem)
+    base_decomp_dir = Path(__file__).resolve().parent.parent / "decompiled_sources"
+    target_out = out_dir or (base_decomp_dir / apk_file.stem)
     res = decompiler.decompile(apk_file, output_dir=target_out, export_gradle=export_gradle)
 
     if not res.success:
@@ -134,8 +136,74 @@ def cmd_decompile(
     if web_assets:
         print(f"    [Destaque] Projeto Web/Cordova detectado! Assets em: {web_assets[0].parent.resolve()}")
 
+    # Verificar se é Adobe AIR / Flash
+    if res.air_info and res.air_info.is_air:
+        air_dest = res.air_result_dir.resolve() if res.air_result_dir else res.output_dir / "air_extracted"
+        print(f"    [Destaque] Projeto Adobe AIR/Flash detectado! SWF e assets extraidos em: {air_dest}")
+        if res.air_info.main_swf_name:
+            print(f"               SWF do Jogo (ActionScript 3): {res.air_info.main_swf_name}")
+        print("               (Consulte AIR_ANALYSIS.md para instrucoes de descompilacao no JPEXS FFDec)")
+
     print()
     return 0
+
+
+def cmd_air(decompiler: ApkDecompiler, target: str, out_dir: Optional[Path] = None) -> int:
+    """Extrai e analisa recursos e arquivos SWF de apps Adobe AIR."""
+    print(f"\n[*] Procurando arquivo APK para '{target}'...")
+    apk_file = decompiler.locate_apk(target)
+
+    if not apk_file:
+        print(f"[!] Nenhum arquivo APK encontrado para '{target}'.")
+        print("    Certifique-se de que o APK foi extraído para 'extracted_apks' ou informe o caminho completo.")
+        return 1
+
+    print(f"[+] APK localizado: {apk_file.resolve()} ({format_bytes(apk_file.stat().st_size)})")
+
+    if not AirExtractor.is_air_apk(apk_file):
+        print(f"[!] O arquivo '{apk_file.name}' nao parece ser um aplicativo Adobe AIR / Flash.")
+        print("    Continuando extracao de assets mesmo assim...")
+
+    base_decomp_dir = Path(__file__).resolve().parent.parent / "decompiled_sources"
+    target_out = out_dir or (base_decomp_dir / apk_file.stem / "air_extracted")
+    print(f"[*] Extraindo recursos e codigos ActionScript (SWF) para: {target_out.resolve()}")
+
+    res = AirExtractor.extract_air_assets(apk_file, output_dir=target_out)
+
+    if not res.success:
+        print(f"[!] Erro ao extrair assets AIR: {res.error_message}")
+        return 1
+
+    print("\n[+] Extracao Adobe AIR concluida com sucesso!")
+    info = res.app_info
+    if info.app_name:
+        print(f"    Nome da Aplicacao: {info.app_name}")
+    if info.app_id:
+        print(f"    ID do Pacote: {info.app_id}")
+    if info.version:
+        print(f"    Versao: {info.version}")
+    if info.air_sdk_version:
+        print(f"    Versao AIR SDK: {info.air_sdk_version}")
+    if info.render_mode:
+        print(f"    Modo de Renderizacao: {info.render_mode}")
+
+    if res.main_swf_file and res.main_swf_file.is_file():
+        swf_sz = format_bytes(res.main_swf_file.stat().st_size)
+        print(f"    SWF Principal (Codigo do Jogo): {res.main_swf_file.name} ({swf_sz})")
+        print(f"    Caminho do SWF: {res.main_swf_file.resolve()}")
+
+    print(f"    Total de arquivos SWF: {len(res.all_swf_files)}")
+    print(f"    Extensoes Nativas (ANEs): {len(info.extensions)}")
+    print(f"    Total de arquivos extraidos: {res.total_files_extracted}")
+
+    if res.report_file and res.report_file.is_file():
+        print(f"\n[+] Relatorio detalhado e Guia FFDec gerados em:")
+        print(f"    {res.report_file.resolve()}")
+        print("    -> Abra o arquivo SWF no JPEXS Free Flash Decompiler (FFDec) para navegar no codigo ActionScript 3!")
+
+    print()
+    return 0
+
 
 
 def cmd_gui(decompiler: ApkDecompiler, target: Optional[str] = None) -> int:
@@ -172,7 +240,7 @@ def interactive_menu(client: AdbClient, extractor: ApkExtractor, decompiler: Apk
         print("5. Abrir JADX-GUI (Visualizador Grafico de Codigo)")
         print("6. Abrir pasta de APKs extraidos no Explorer")
         print("7. Abrir pasta de codigos descompilados no Explorer")
-        print("8. Iniciar Servidor Web Local (Executar app no navegador)")
+        print("8. Extrair & Analisar App Adobe AIR / Flash (SWF / ActionScript)")
         print("0. Sair")
         print("-" * 55)
         choice = input("Escolha uma opcao [0-8]: ").strip()
@@ -201,8 +269,9 @@ def interactive_menu(client: AdbClient, extractor: ApkExtractor, decompiler: Apk
             decomp_dir.mkdir(parents=True, exist_ok=True)
             os.startfile(str(decomp_dir.resolve()))
         elif choice == "8":
-            from web_server import run_web_server
-            run_web_server()
+            term = input("Nome do pacote ou APK Adobe AIR (ex: air.com.hypah.io.slither): ").strip()
+            if term:
+                cmd_air(decompiler, term)
         elif choice == "0":
             print("\nEncerrando s_ADB_Tools. Ate logo!")
             break
@@ -249,12 +318,14 @@ def run_cli() -> int:
     decompile_p.add_argument("--out", "-d", help="Diretorio de destino do codigo descompilado", default=None)
     decompile_p.add_argument("--no-gradle", action="store_true", help="Nao exportar estrutura de projeto Gradle")
 
+    # air / swf / flash
+    air_p = subparsers.add_parser("air", aliases=["swf", "flash"], help="Extrai e analisa recursos e arquivos SWF de apps Adobe AIR")
+    air_p.add_argument("target", help="Caminho do APK ou nome do pacote ja extraido")
+    air_p.add_argument("--out", "-d", help="Diretorio de destino dos assets extraidos", default=None)
+
     # gui
     gui_p = subparsers.add_parser("gui", help="Abre a interface grafica JADX-GUI")
     gui_p.add_argument("target", nargs="?", help="Caminho ou nome do APK a ser aberto", default=None)
-
-    # web
-    subparsers.add_parser("web", help="Inicia o servidor web local para testar o aplicativo no navegador")
 
     args = parser.parse_args()
 
@@ -281,11 +352,11 @@ def run_cli() -> int:
     elif args.command in ["decompile", "source"]:
         out_dest = Path(args.out) if args.out else None
         return cmd_decompile(decompiler, args.target, out_dir=out_dest, export_gradle=not args.no_gradle)
+    elif args.command in ["air", "swf", "flash"]:
+        out_dest = Path(args.out) if args.out else None
+        return cmd_air(decompiler, args.target, out_dir=out_dest)
     elif args.command == "gui":
         return cmd_gui(decompiler, args.target)
-    elif args.command == "web":
-        from web_server import run_web_server
-        run_web_server()
-        return 0
 
     return 0
+

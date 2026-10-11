@@ -5,3 +5,6 @@ __pycache__/
 env/
 venv/
 *.log
+tools/jadx/
+decompiled_sources/
+extracted_apks/

@@ -1,11 +1,13 @@
-"""Interface de Linha de Comando (CLI) para s_ADB_Tools."""
+"""Interface de Linha de Comando (CLI) para s_ADB_Tools com suporte a extracao e descompilacao."""
 
 import argparse
+import os
 import sys
 from pathlib import Path
 from typing import Optional
 
 from .adb_client import AdbClient
+from .decompiler import ApkDecompiler
 from .extractor import ApkExtractor
 
 
@@ -66,14 +68,12 @@ def cmd_extract(extractor: ApkExtractor, target: str, out_dir: Path, serial: Opt
     if len(matches) == 1:
         chosen_pkg = matches[0]
     else:
-        # Se houver um exato
         if target in matches:
             chosen_pkg = target
         else:
             print(f"[?] Foram encontrados {len(matches)} pacotes correspondentes:")
             for idx, p in enumerate(matches, 1):
                 print(f"  [{idx}] {p}")
-            # Em modo não-interativo ou com correspondência, usa o primeiro se for muito parecido
             print(f"[*] Selecionando o primeiro resultado: {matches[0]}")
             chosen_pkg = matches[0]
 
@@ -96,19 +96,85 @@ def cmd_extract(extractor: ApkExtractor, target: str, out_dir: Path, serial: Opt
         return 1
 
 
-def interactive_menu(client: AdbClient, extractor: ApkExtractor, out_dir: Path):
+def cmd_decompile(
+    decompiler: ApkDecompiler,
+    target: str,
+    out_dir: Optional[Path] = None,
+    export_gradle: bool = True,
+) -> int:
+    """Localiza e descompila um APK para código fonte Java/XML."""
+    print(f"\n[*] Procurando arquivo APK para '{target}'...")
+    apk_file = decompiler.locate_apk(target)
+
+    if not apk_file:
+        print(f"[!] Nenhum arquivo APK encontrado para '{target}'.")
+        print("    Certifique-se de que o APK foi extraído para a pasta 'extracted_apks' ou informe o caminho completo.")
+        return 1
+
+    print(f"[+] APK localizado: {apk_file.resolve()} ({format_bytes(apk_file.stat().st_size)})")
+
+    target_out = out_dir or (apk_file.parent.parent.parent / "decompiled_sources" / apk_file.stem)
+    res = decompiler.decompile(apk_file, output_dir=target_out, export_gradle=export_gradle)
+
+    if not res.success:
+        print(f"[!] Erro durante a descompilacao: {res.error_message}")
+        return 1
+
+    print("\n[+] Descompilacao concluida com sucesso!")
+    print(f"    Diretorio do projeto: {res.output_dir.resolve()}")
+    print(f"    Arquivos Java (.java): {res.java_files_count}")
+    print(f"    Arquivos de Recursos (.xml): {res.xml_files_count}")
+    print(f"    Total de arquivos gerados: {res.total_files_count}")
+
+    if res.manifest_file and res.manifest_file.is_file():
+        print(f"    AndroidManifest.xml: {res.manifest_file.resolve()}")
+
+    # Verificar se contem assets web (Cordova / Webview)
+    web_assets = list(res.output_dir.rglob("index.html"))
+    if web_assets:
+        print(f"    [Destaque] Projeto Web/Cordova detectado! Assets em: {web_assets[0].parent.resolve()}")
+
+    print()
+    return 0
+
+
+def cmd_gui(decompiler: ApkDecompiler, target: Optional[str] = None) -> int:
+    """Abre a interface gráfica do JADX-GUI."""
+    apk_file = None
+    if target:
+        apk_file = decompiler.locate_apk(target)
+        if apk_file:
+            print(f"[*] Abrindo '{apk_file.name}' no JADX-GUI...")
+        else:
+            print(f"[!] APK '{target}' nao encontrado. Abrindo JADX-GUI vazio...")
+    else:
+        print("[*] Abrindo JADX-GUI...")
+
+    try:
+        decompiler.launch_gui(apk_file)
+        print("[+] JADX-GUI iniciado em segundo plano!")
+        return 0
+    except Exception as e:
+        print(f"[!] Falha ao iniciar interface grafica: {e}")
+        return 1
+
+
+def interactive_menu(client: AdbClient, extractor: ApkExtractor, decompiler: ApkDecompiler, out_dir: Path):
     """Executa o modo interativo com menu."""
     while True:
-        print("\n" + "=" * 50)
-        print("       s_ADB_Tools - Gerenciador & Extrator de APK")
-        print("=" * 50)
-        print("1. Listar dispositivos conectados")
-        print("2. Buscar e extrair APK (ex: gastos, shub, whatsapp)")
-        print("3. Listar todos os apps instalados (usuario/terceiros)")
-        print("4. Abrir pasta de APKs extraidos")
+        print("\n" + "=" * 55)
+        print("    s_ADB_Tools - Gerenciador, Extrator & Decompiler")
+        print("=" * 55)
+        print("1. Listar dispositivos conectados via ADB")
+        print("2. Buscar e extrair APK do celular (ex: gastos, chess)")
+        print("3. Listar apps instalados no celular (terceiros)")
+        print("4. Descompilar APK para codigo-fonte (Java / XML / Assets)")
+        print("5. Abrir JADX-GUI (Visualizador Grafico de Codigo)")
+        print("6. Abrir pasta de APKs extraidos no Explorer")
+        print("7. Abrir pasta de codigos descompilados no Explorer")
         print("0. Sair")
-        print("-" * 50)
-        choice = input("Escolha uma opcao [0-4]: ").strip()
+        print("-" * 55)
+        choice = input("Escolha uma opcao [0-7]: ").strip()
 
         if choice == "1":
             cmd_devices(client)
@@ -120,9 +186,19 @@ def interactive_menu(client: AdbClient, extractor: ApkExtractor, out_dir: Path):
             filtro = input("Filtrar por nome (ou Enter para ver todos): ").strip()
             cmd_list(client, third_party=True, query=filtro if filtro else None)
         elif choice == "4":
-            import os
+            term = input("Nome do pacote ou APK a descompilar (ex: com.smartexpenditure): ").strip()
+            if term:
+                cmd_decompile(decompiler, term)
+        elif choice == "5":
+            term = input("APK a carregar no GUI (ou Enter para abrir vazio): ").strip()
+            cmd_gui(decompiler, term if term else None)
+        elif choice == "6":
             out_dir.mkdir(parents=True, exist_ok=True)
             os.startfile(str(out_dir.resolve()))
+        elif choice == "7":
+            decomp_dir = out_dir.parent / "decompiled_sources"
+            decomp_dir.mkdir(parents=True, exist_ok=True)
+            os.startfile(str(decomp_dir.resolve()))
         elif choice == "0":
             print("\nEncerrando s_ADB_Tools. Ate logo!")
             break
@@ -134,10 +210,10 @@ def run_cli() -> int:
     """Ponto de entrada da CLI."""
     parser = argparse.ArgumentParser(
         prog="s_ADB_Tools",
-        description="Ferramenta para inspecao de pacotes e extracao automatica de APKs via ADB.",
+        description="Ferramenta para inspecao, extracao e descompilacao de APKs via ADB e JADX.",
     )
     parser.add_argument("--adb", help="Caminho personalizado para o adb.exe", default=None)
-    parser.add_argument("-s", "--serial", help="Serial do dispositivo desejado (se houver multiplos)", default=None)
+    parser.add_argument("-s", "--serial", help="Serial do dispositivo desejado", default=None)
     parser.add_argument(
         "-o",
         "--output",
@@ -163,17 +239,28 @@ def run_cli() -> int:
     search_p = subparsers.add_parser("search", help="Busca pacotes instalados pelo nome")
     search_p.add_argument("term", help="Termo de busca")
 
+    # decompile / source
+    decompile_p = subparsers.add_parser("decompile", aliases=["source"], help="Descompila um APK para codigo fonte")
+    decompile_p.add_argument("target", help="Caminho do APK ou nome do pacote ja extraido")
+    decompile_p.add_argument("--out", "-d", help="Diretorio de destino do codigo descompilado", default=None)
+    decompile_p.add_argument("--no-gradle", action="store_true", help="Nao exportar estrutura de projeto Gradle")
+
+    # gui
+    gui_p = subparsers.add_parser("gui", help="Abre a interface grafica JADX-GUI")
+    gui_p.add_argument("target", nargs="?", help="Caminho ou nome do APK a ser aberto", default=None)
+
     args = parser.parse_args()
 
     client = AdbClient(adb_path=args.adb)
     extractor = ApkExtractor(adb_client=client)
+    decompiler = ApkDecompiler()
+
     out_dir = Path(args.output)
     if not out_dir.is_absolute():
         out_dir = Path.cwd() / out_dir
 
     if not args.command:
-        # Se nao passou nenhum comando pela linha de comando, roda interativo
-        interactive_menu(client, extractor, out_dir)
+        interactive_menu(client, extractor, decompiler, out_dir)
         return 0
 
     if args.command == "devices":
@@ -184,5 +271,10 @@ def run_cli() -> int:
         return cmd_list(client, third_party=False, query=args.term)
     elif args.command in ["extract", "pull"]:
         return cmd_extract(extractor, args.package, out_dir, serial=args.serial)
+    elif args.command in ["decompile", "source"]:
+        out_dest = Path(args.out) if args.out else None
+        return cmd_decompile(decompiler, args.target, out_dir=out_dest, export_gradle=not args.no_gradle)
+    elif args.command == "gui":
+        return cmd_gui(decompiler, args.target)
 
     return 0

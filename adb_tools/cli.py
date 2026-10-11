@@ -172,9 +172,10 @@ def interactive_menu(client: AdbClient, extractor: ApkExtractor, decompiler: Apk
         print("5. Abrir JADX-GUI (Visualizador Grafico de Codigo)")
         print("6. Abrir pasta de APKs extraidos no Explorer")
         print("7. Abrir pasta de codigos descompilados no Explorer")
+        print("8. Iniciar Servidor Web Local (Executar app no navegador)")
         print("0. Sair")
         print("-" * 55)
-        choice = input("Escolha uma opcao [0-7]: ").strip()
+        choice = input("Escolha uma opcao [0-8]: ").strip()
 
         if choice == "1":
             cmd_devices(client)
@@ -199,6 +200,9 @@ def interactive_menu(client: AdbClient, extractor: ApkExtractor, decompiler: Apk
             decomp_dir = out_dir.parent / "decompiled_sources"
             decomp_dir.mkdir(parents=True, exist_ok=True)
             os.startfile(str(decomp_dir.resolve()))
+        elif choice == "8":
+            from web_server import run_web_server
+            run_web_server()
         elif choice == "0":
             print("\nEncerrando s_ADB_Tools. Ate logo!")
             break
@@ -249,6 +253,9 @@ def run_cli() -> int:
     gui_p = subparsers.add_parser("gui", help="Abre a interface grafica JADX-GUI")
     gui_p.add_argument("target", nargs="?", help="Caminho ou nome do APK a ser aberto", default=None)
 
+    # web
+    subparsers.add_parser("web", help="Inicia o servidor web local para testar o aplicativo no navegador")
+
     args = parser.parse_args()
 
     client = AdbClient(adb_path=args.adb)
@@ -276,5 +283,9 @@ def run_cli() -> int:
         return cmd_decompile(decompiler, args.target, out_dir=out_dest, export_gradle=not args.no_gradle)
     elif args.command == "gui":
         return cmd_gui(decompiler, args.target)
+    elif args.command == "web":
+        from web_server import run_web_server
+        run_web_server()
+        return 0
 
     return 0

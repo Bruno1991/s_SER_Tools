@@ -4,12 +4,13 @@ import argparse
 import os
 import sys
 from pathlib import Path
-from typing import Optional
+from typing import List, Optional
 
 from .adb_client import AdbClient
 from .air_extractor import AirExtractor
 from .decompiler import ApkDecompiler
 from .extractor import ApkExtractor
+from .ffdec_manager import FfdecManager
 
 
 def format_bytes(size: int) -> str:
@@ -227,7 +228,82 @@ def cmd_gui(decompiler: ApkDecompiler, target: Optional[str] = None) -> int:
         return 1
 
 
-def interactive_menu(client: AdbClient, extractor: ApkExtractor, decompiler: ApkDecompiler, out_dir: Path):
+def cmd_ffdec(
+    ffdec: FfdecManager,
+    target: str,
+    out_dir: Optional[Path] = None,
+    formats: Optional[List[str]] = None,
+) -> int:
+    """Localiza e descompila um arquivo SWF (ActionScript 3, imagens, sons e binários) usando FFDec."""
+    print(f"\n[*] Procurando arquivo SWF para '{target}'...")
+    swf_file = ffdec.locate_swf(target)
+
+    if not swf_file:
+        print(f"[!] Nenhum arquivo SWF encontrado para '{target}'.")
+        print("    Informe o caminho direto para o .swf ou o nome do pacote Adobe AIR extraído.")
+        return 1
+
+    print(f"[+] SWF localizado: {swf_file.resolve()} ({format_bytes(swf_file.stat().st_size)})")
+
+    if out_dir is None:
+        # Padrão: decompiled_sources/<pacote>/actionscript_src ou <swf_folder>/actionscript_src
+        parent_dir = swf_file.parent
+        if parent_dir.name == "air_extracted":
+            target_out = parent_dir.parent / "actionscript_src"
+        else:
+            target_out = parent_dir / f"{swf_file.stem}_src"
+    else:
+        target_out = out_dir
+
+    if formats is None:
+        formats = ["script", "image", "sound", "binaryData"]
+
+    print(f"[*] Iniciando descompilação com JPEXS FFDec...")
+    res = ffdec.export_swf(swf_file, output_dir=target_out, formats=formats)
+
+    if not res.success:
+        print(f"[!] Falha na descompilação: {res.error_message}")
+        return 1
+
+    print("\n[+] Descompilação SWF concluída com sucesso!")
+    print(f"    Diretório de destino: {res.output_dir.resolve()}")
+    print(f"    Classes ActionScript (.as): {res.scripts_count}")
+    print(f"    Imagens/Sprites (.png, .jpg): {res.images_count}")
+    print(f"    Efeitos sonoros (.mp3, .wav): {res.sounds_count}")
+    print(f"    Arquivos binários (.bin, .dat): {res.binary_data_count}")
+    print(f"    Total de arquivos exportados: {res.total_files_count}")
+    print()
+    return 0
+
+
+def cmd_ffdec_gui(ffdec: FfdecManager, target: Optional[str] = None) -> int:
+    """Abre o JPEXS Free Flash Decompiler GUI para inspeção visual do SWF."""
+    swf_file = None
+    if target:
+        swf_file = ffdec.locate_swf(target)
+        if swf_file:
+            print(f"[*] Abrindo '{swf_file.name}' no JPEXS FFDec GUI...")
+        else:
+            print(f"[!] SWF '{target}' não encontrado. Abrindo FFDec vazio...")
+    else:
+        print("[*] Abrindo JPEXS FFDec GUI...")
+
+    try:
+        ffdec.launch_gui(swf_file)
+        print("[+] JPEXS FFDec GUI iniciado em segundo plano!")
+        return 0
+    except Exception as e:
+        print(f"[!] Falha ao iniciar FFDec GUI: {e}")
+        return 1
+
+
+def interactive_menu(
+    client: AdbClient,
+    extractor: ApkExtractor,
+    decompiler: ApkDecompiler,
+    ffdec: FfdecManager,
+    out_dir: Path,
+):
     """Executa o modo interativo com menu."""
     while True:
         print("\n" + "=" * 55)
@@ -237,13 +313,15 @@ def interactive_menu(client: AdbClient, extractor: ApkExtractor, decompiler: Apk
         print("2. Buscar e extrair APK do celular (ex: gastos, chess)")
         print("3. Listar apps instalados no celular (terceiros)")
         print("4. Descompilar APK para codigo-fonte (Java / XML / Assets)")
-        print("5. Abrir JADX-GUI (Visualizador Grafico de Codigo)")
+        print("5. Abrir JADX-GUI (Visualizador Grafico de Codigo Java)")
         print("6. Abrir pasta de APKs extraidos no Explorer")
         print("7. Abrir pasta de codigos descompilados no Explorer")
-        print("8. Extrair & Analisar App Adobe AIR / Flash (SWF / ActionScript)")
+        print("8. Extrair & Analisar App Adobe AIR / Flash (SWF / Assets)")
+        print("9. Descompilar SWF para ActionScript 3 & Assets (FFDec)")
+        print("10. Abrir JPEXS FFDec GUI (Visualizador Grafico Flash)")
         print("0. Sair")
         print("-" * 55)
-        choice = input("Escolha uma opcao [0-8]: ").strip()
+        choice = input("Escolha uma opcao [0-10]: ").strip()
 
         if choice == "1":
             cmd_devices(client)
@@ -272,6 +350,13 @@ def interactive_menu(client: AdbClient, extractor: ApkExtractor, decompiler: Apk
             term = input("Nome do pacote ou APK Adobe AIR (ex: air.com.hypah.io.slither): ").strip()
             if term:
                 cmd_air(decompiler, term)
+        elif choice == "9":
+            term = input("Nome do pacote, APK ou arquivo SWF (ex: air.com.hypah.io.slither): ").strip()
+            if term:
+                cmd_ffdec(ffdec, term)
+        elif choice == "10":
+            term = input("SWF a carregar no FFDec GUI (ou Enter para abrir vazio): ").strip()
+            cmd_ffdec_gui(ffdec, term if term else None)
         elif choice == "0":
             print("\nEncerrando s_ADB_Tools. Ate logo!")
             break
@@ -283,7 +368,7 @@ def run_cli() -> int:
     """Ponto de entrada da CLI."""
     parser = argparse.ArgumentParser(
         prog="s_ADB_Tools",
-        description="Ferramenta para inspecao, extracao e descompilacao de APKs via ADB e JADX.",
+        description="Ferramenta para inspecao, extracao e descompilacao de APKs via ADB, JADX e JPEXS FFDec.",
     )
     parser.add_argument("--adb", help="Caminho personalizado para o adb.exe", default=None)
     parser.add_argument("-s", "--serial", help="Serial do dispositivo desejado", default=None)
@@ -319,26 +404,37 @@ def run_cli() -> int:
     decompile_p.add_argument("--no-gradle", action="store_true", help="Nao exportar estrutura de projeto Gradle")
 
     # air / swf / flash
-    air_p = subparsers.add_parser("air", aliases=["swf", "flash"], help="Extrai e analisa recursos e arquivos SWF de apps Adobe AIR")
+    air_p = subparsers.add_parser("air", help="Extrai e analisa recursos e arquivos SWF de apps Adobe AIR")
     air_p.add_argument("target", help="Caminho do APK ou nome do pacote ja extraido")
     air_p.add_argument("--out", "-d", help="Diretorio de destino dos assets extraidos", default=None)
 
-    # gui
+    # ffdec / decompile-swf / as3
+    ffdec_p = subparsers.add_parser("ffdec", aliases=["as3", "decompile-swf"], help="Descompila SWF em ActionScript 3 e assets via FFDec")
+    ffdec_p.add_argument("target", help="Caminho do arquivo SWF ou nome do pacote AIR")
+    ffdec_p.add_argument("--out", "-d", help="Diretório de destino dos scripts e assets exportados", default=None)
+    ffdec_p.add_argument("--formats", help="Formatos a exportar separados por vírgula (padrão: script,image,sound,binaryData)", default=None)
+
+    # gui (JADX)
     gui_p = subparsers.add_parser("gui", help="Abre a interface grafica JADX-GUI")
     gui_p.add_argument("target", nargs="?", help="Caminho ou nome do APK a ser aberto", default=None)
+
+    # ffdec-gui (Flash)
+    ffdec_gui_p = subparsers.add_parser("ffdec-gui", aliases=["flash-gui"], help="Abre a interface grafica JPEXS FFDec GUI")
+    ffdec_gui_p.add_argument("target", nargs="?", help="Caminho ou nome do SWF a ser aberto", default=None)
 
     args = parser.parse_args()
 
     client = AdbClient(adb_path=args.adb)
     extractor = ApkExtractor(adb_client=client)
     decompiler = ApkDecompiler()
+    ffdec = FfdecManager()
 
     out_dir = Path(args.output)
     if not out_dir.is_absolute():
         out_dir = Path.cwd() / out_dir
 
     if not args.command:
-        interactive_menu(client, extractor, decompiler, out_dir)
+        interactive_menu(client, extractor, decompiler, ffdec, out_dir)
         return 0
 
     if args.command == "devices":
@@ -352,11 +448,17 @@ def run_cli() -> int:
     elif args.command in ["decompile", "source"]:
         out_dest = Path(args.out) if args.out else None
         return cmd_decompile(decompiler, args.target, out_dir=out_dest, export_gradle=not args.no_gradle)
-    elif args.command in ["air", "swf", "flash"]:
+    elif args.command == "air":
         out_dest = Path(args.out) if args.out else None
         return cmd_air(decompiler, args.target, out_dir=out_dest)
+    elif args.command in ["ffdec", "as3", "decompile-swf"]:
+        out_dest = Path(args.out) if args.out else None
+        fmts = [f.strip() for f in args.formats.split(",")] if args.formats else None
+        return cmd_ffdec(ffdec, args.target, out_dir=out_dest, formats=fmts)
     elif args.command == "gui":
         return cmd_gui(decompiler, args.target)
+    elif args.command in ["ffdec-gui", "flash-gui"]:
+        return cmd_ffdec_gui(ffdec, args.target)
 
     return 0
 

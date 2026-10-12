@@ -13,6 +13,8 @@ class TestAirExtractor(unittest.TestCase):
         self.expense_apk = Path(r"C:\dev\s_ADB_Tools\extracted_apks\com.smartexpenditure\com.smartexpenditure.apk")
 
     def test_is_air_apk_detection(self):
+        if not self.slither_apk.exists():
+            self.skipTest("slither_apk não encontrado em extracted_apks")
         self.assertTrue(
             AirExtractor.is_air_apk(self.slither_apk),
             "air.com.hypah.io.slither.apk deve ser detectado como app Adobe AIR.",
@@ -24,6 +26,8 @@ class TestAirExtractor(unittest.TestCase):
             )
 
     def test_inspect_apk_metadata(self):
+        if not self.slither_apk.exists():
+            self.skipTest("slither_apk não encontrado em extracted_apks")
         info = AirExtractor.inspect_apk(self.slither_apk)
         self.assertTrue(info.is_air)
         self.assertEqual(info.app_id, "com.hypah.io.slither")
@@ -51,6 +55,8 @@ class TestAirExtractor(unittest.TestCase):
         self.assertIsNone(invalid)
 
     def test_extract_air_assets_in_temp_dir(self):
+        if not self.slither_apk.exists():
+            self.skipTest("slither_apk não encontrado em extracted_apks")
         with tempfile.TemporaryDirectory() as tmp_dir:
             out_path = Path(tmp_dir) / "test_air_extracted"
             res = AirExtractor.extract_air_assets(self.slither_apk, output_dir=out_path)

@@ -6,5 +6,7 @@ env/
 venv/
 *.log
 tools/jadx/
+tools/ffdec/
+tools/*.zip
 decompiled_sources/
 extracted_apks/

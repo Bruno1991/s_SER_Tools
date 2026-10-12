@@ -4,8 +4,9 @@ from .adb_client import AdbClient
 from .air_extractor import AirAppInfo, AirExtractor, AirExtractorResult
 from .decompiler import ApkDecompiler, DecompileResult
 from .extractor import ApkExtractor
+from .ffdec_manager import FfdecExportResult, FfdecManager
 
-__version__ = "1.1.0"
+__version__ = "1.2.0"
 
 __all__ = [
     "AdbClient",
@@ -15,5 +16,7 @@ __all__ = [
     "AirExtractor",
     "AirAppInfo",
     "AirExtractorResult",
+    "FfdecManager",
+    "FfdecExportResult",
 ]
 

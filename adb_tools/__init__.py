@@ -5,8 +5,9 @@ from .air_extractor import AirAppInfo, AirExtractor, AirExtractorResult
 from .decompiler import ApkDecompiler, DecompileResult
 from .extractor import ApkExtractor
 from .ffdec_manager import FfdecExportResult, FfdecManager
+from .chess_bots import ChessBotsManager
 
-__version__ = "1.2.0"
+__version__ = "1.3.0"
 
 __all__ = [
     "AdbClient",
@@ -18,5 +19,6 @@ __all__ = [
     "AirExtractorResult",
     "FfdecManager",
     "FfdecExportResult",
+    "ChessBotsManager",
 ]
 

@@ -1,4 +1,2 @@
-# s_ADB_Tools utiliza exclusivamente bibliotecas padrao do Python 3 (zero dependencias externas).
-# Caso queira adicionar suporte opcional a interfaces ricas no terminal:
-# colorama>=0.4.6
-# rich>=13.0.0
+# Dependência opcional para emulação e jogos contra os bots do Chess.com:
+chess>=1.11.0

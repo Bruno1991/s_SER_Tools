@@ -133,3 +133,13 @@ C:\dev\s_ADB_Tools\
   - Protocolo binário de rede Slither v5+ (handshake CRC32, opcodes `'a'`, `'g'`, `'e'`, `'d'`, `'s'` e controle de 1 byte de direção e boost).
   - Física de movimento proporcional ao tamanho da cobra e perda de massa por turbo.
 - **Visualizador Gráfico:** Utilize o script `abrir-ffdec-gui.bat` para abrir e navegar interativamente no SWF e em todas as sprites.
+
+### 3. `com.chess` ("Chess.com - Xadrez")
+- **Tipo de Aplicativo:** Aplicativo Nativo Android + Motores C++ JNI (`libcee-wrapper.so`).
+- **Análise dos Bots:** Relatório completo em [CHESS_BOTS_ANALYSIS.md](file:///c:/dev/s_ADB_Tools/CHESS_BOTS_ANALYSIS.md).
+- **Catálogo Oficial:** 217 bots em 14 categorias (Iniciantes, Top Players como Hikaru, Criadores como MrBeast e xQc, etc.).
+- **Motor Offline:** Os lances dos bots são calculados 100% no aparelho via Komodo / CEE e 14 livros de abertura Polyglot `.bin` (`beginner.bin`, `nakamura.bin`, `fischer.bin`, etc.).
+- **Consulta e Jogo:** 
+  - Execute `consultar-bots.bat` ou `python main.py bots summary` para ver o resumo.
+  - Execute `python main.py bots info Martin` para ver a ficha técnica e falas autênticas de qualquer bot.
+  - Execute `jogar-bot.bat` ou `python main.py bots play <nome>` para jogar contra qualquer bot diretamente pelo terminal.

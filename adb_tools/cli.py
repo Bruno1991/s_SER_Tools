@@ -8,6 +8,12 @@ from typing import List, Optional
 
 from .adb_client import AdbClient
 from .air_extractor import AirExtractor
+from .chess_bots import (
+    ChessBotsManager,
+    play_interactive_game,
+    print_bot_detail,
+    print_bot_summary,
+)
 from .decompiler import ApkDecompiler
 from .extractor import ApkExtractor
 from .ffdec_manager import FfdecManager
@@ -297,6 +303,52 @@ def cmd_ffdec_gui(ffdec: FfdecManager, target: Optional[str] = None) -> int:
         return 1
 
 
+def cmd_chess_bots(manager: ChessBotsManager, action: str = "summary", query: Optional[str] = None) -> int:
+    """Comando para gerenciar e interagir com os bots do Chess.com."""
+    if action == "summary" or action == "list":
+        print_bot_summary(manager)
+        return 0
+
+    if action == "info":
+        if not query:
+            print("[!] Informe o nome ou username do bot. Ex: Martin, Nelson, Hikaru")
+            return 1
+        bot = manager.find_bot(query)
+        if not bot:
+            print(f"[!] Bot '{query}' não encontrado.")
+            return 1
+        print_bot_detail(bot, manager)
+        return 0
+
+    if action == "search":
+        if not query:
+            print("[!] Informe o termo de busca para os bots.")
+            return 1
+        matches = manager.search_bots(query)
+        print(f"\n--- Bots encontrados para '{query}' ({len(matches)}) ---")
+        if not matches:
+            print(" Nenhum bot encontrado.")
+            return 0
+        for b in matches:
+            lock = "GRÁTIS" if b.get("canPlay") else "BLOQUEADO"
+            print(f"  * {b.get('name'):<20} | User: {b.get('username'):<22} | Elo: {b.get('rating', 'N/A'):<5} | {lock}")
+        print()
+        return 0
+
+    if action == "play":
+        if not query:
+            query = "Martin"
+        bot = manager.find_bot(query)
+        if not bot:
+            print(f"[!] Bot '{query}' não encontrado.")
+            return 1
+        play_interactive_game(bot, manager)
+        return 0
+
+    print(f"[!] Ação desconhecida: {action}")
+    return 1
+
+
 def interactive_menu(
     client: AdbClient,
     extractor: ApkExtractor,
@@ -305,6 +357,7 @@ def interactive_menu(
     out_dir: Path,
 ):
     """Executa o modo interativo com menu."""
+    bots_manager = ChessBotsManager()
     while True:
         print("\n" + "=" * 55)
         print("    s_ADB_Tools - Gerenciador, Extrator & Decompiler")
@@ -319,9 +372,10 @@ def interactive_menu(
         print("8. Extrair & Analisar App Adobe AIR / Flash (SWF / Assets)")
         print("9. Descompilar SWF para ActionScript 3 & Assets (FFDec)")
         print("10. Abrir JPEXS FFDec GUI (Visualizador Grafico Flash)")
+        print("11. Inspecionar & Jogar Bots do Chess.com (217 Bots / Polyglot / IA)")
         print("0. Sair")
         print("-" * 55)
-        choice = input("Escolha uma opcao [0-10]: ").strip()
+        choice = input("Escolha uma opcao [0-11]: ").strip()
 
         if choice == "1":
             cmd_devices(client)
@@ -357,6 +411,26 @@ def interactive_menu(
         elif choice == "10":
             term = input("SWF a carregar no FFDec GUI (ou Enter para abrir vazio): ").strip()
             cmd_ffdec_gui(ffdec, term if term else None)
+        elif choice == "11":
+            print("\n--- Menu de Bots Chess.com ---")
+            print(" [1] Resumo e estatísticas dos 217 bots")
+            print(" [2] Buscar bot por nome ou categoria")
+            print(" [3] Ver ficha técnica de um bot específico")
+            print(" [4] Jogar partida interativa no terminal (com livro .bin)")
+            b_opt = input("Opção [1-4]: ").strip()
+            if b_opt == "1":
+                cmd_chess_bots(bots_manager, action="summary")
+            elif b_opt == "2":
+                q = input("Digite o termo de busca: ").strip()
+                if q:
+                    cmd_chess_bots(bots_manager, action="search", query=q)
+            elif b_opt == "3":
+                q = input("Nome do bot (ex: Martin, Nelson, Hikaru): ").strip()
+                if q:
+                    cmd_chess_bots(bots_manager, action="info", query=q)
+            elif b_opt == "4":
+                q = input("Nome do bot contra quem jogar (ex: Martin, Nelson, GothamChess): ").strip()
+                cmd_chess_bots(bots_manager, action="play", query=q if q else "Martin")
         elif choice == "0":
             print("\nEncerrando s_ADB_Tools. Ate logo!")
             break
@@ -422,12 +496,18 @@ def run_cli() -> int:
     ffdec_gui_p = subparsers.add_parser("ffdec-gui", aliases=["flash-gui"], help="Abre a interface grafica JPEXS FFDec GUI")
     ffdec_gui_p.add_argument("target", nargs="?", help="Caminho ou nome do SWF a ser aberto", default=None)
 
+    # bots / chess-bots
+    bots_p = subparsers.add_parser("bots", aliases=["chess-bots"], help="Inspeciona e joga contra os bots do Chess.com")
+    bots_p.add_argument("action", nargs="?", choices=["summary", "list", "search", "info", "play"], default="summary", help="Ação a executar")
+    bots_p.add_argument("query", nargs="?", default=None, help="Termo de busca ou nome do bot")
+
     args = parser.parse_args()
 
     client = AdbClient(adb_path=args.adb)
     extractor = ApkExtractor(adb_client=client)
     decompiler = ApkDecompiler()
     ffdec = FfdecManager()
+    bots_manager = ChessBotsManager()
 
     out_dir = Path(args.output)
     if not out_dir.is_absolute():
@@ -459,6 +539,8 @@ def run_cli() -> int:
         return cmd_gui(decompiler, args.target)
     elif args.command in ["ffdec-gui", "flash-gui"]:
         return cmd_ffdec_gui(ffdec, args.target)
+    elif args.command in ["bots", "chess-bots"]:
+        return cmd_chess_bots(bots_manager, action=args.action, query=args.query)
 
     return 0
 

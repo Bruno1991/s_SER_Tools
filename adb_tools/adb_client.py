@@ -5,7 +5,7 @@ import shutil
 import subprocess
 from dataclasses import dataclass
 from pathlib import Path
-from typing import List, Optional
+from typing import Dict, List, Optional
 
 
 @dataclass
@@ -14,6 +14,9 @@ class AndroidDevice:
     status: str
     model: Optional[str] = None
     product: Optional[str] = None
+
+
+AdbDevice = AndroidDevice
 
 
 class AdbClient:
@@ -34,6 +37,7 @@ class AdbClient:
             candidates.append(Path(env_adb))
 
         candidates.extend([
+            Path(r"C:\dev\android_emulator\sdk\platform-tools\adb.exe"),
             Path(r"C:\dev\platform-tools\adb.exe"),
             Path(r"C:\dev\android-sdk\platform-tools\adb.exe"),
             Path(os.path.expandvars(r"%LOCALAPPDATA%\Android\Sdk\platform-tools\adb.exe")),
@@ -110,6 +114,50 @@ class AdbClient:
 
         return devices
 
+    def connect(self, host_port: str) -> bool:
+        """Conecta a um dispositivo via TCP/IP (ex: 127.0.0.1:5555 ou IP de rede)."""
+        res = self.run_cmd(["connect", host_port])
+        return "connected" in res.stdout.lower()
+
+    def disconnect(self, host_port: Optional[str] = None) -> bool:
+        """Desconecta de um dispositivo TCP/IP."""
+        args = ["disconnect"]
+        if host_port:
+            args.append(host_port)
+        res = self.run_cmd(args)
+        return res.returncode == 0
+
+    def restart_server(self) -> bool:
+        """Reinicia o servidor daemon ADB local."""
+        self.run_cmd(["kill-server"])
+        res = self.run_cmd(["start-server"])
+        return res.returncode == 0
+
+    def get_device_props(self, device_serial: Optional[str] = None) -> Dict[str, str]:
+        """Obtém propriedades principais do dispositivo (marca, modelo, versão Android, etc)."""
+        props = {}
+        for key, prop_name in [
+            ("manufacturer", "ro.product.manufacturer"),
+            ("model", "ro.product.model"),
+            ("android_version", "ro.build.version.release"),
+            ("sdk_version", "ro.build.version.sdk"),
+            ("brand", "ro.product.brand"),
+            ("cpu_abi", "ro.product.cpu.abi"),
+        ]:
+            res = self.run_cmd(["shell", "getprop", prop_name], device_serial=device_serial)
+            if res.returncode == 0 and res.stdout.strip():
+                props[key] = res.stdout.strip()
+
+        # Bateria
+        res_bat = self.run_cmd(["shell", "dumpsys", "battery"], device_serial=device_serial)
+        if res_bat.returncode == 0:
+            for l in res_bat.stdout.splitlines():
+                if "level:" in l:
+                    props["battery_level"] = l.split("level:")[1].strip() + "%"
+                    break
+
+        return props
+
     def list_packages(
         self,
         third_party_only: bool = True,
@@ -164,3 +212,60 @@ class AdbClient:
         """Copia arquivo remoto do dispositivo para o armazenamento local."""
         res = self.run_cmd(["pull", remote_path, local_destination], device_serial=device_serial, timeout=120)
         return res.returncode == 0
+
+    def install_apk(
+        self,
+        local_apk: str,
+        device_serial: Optional[str] = None,
+        reinstall: bool = True,
+    ) -> bool:
+        """Instala um arquivo APK no dispositivo."""
+        args = ["install"]
+        if reinstall:
+            args.append("-r")
+        args.append(local_apk)
+        res = self.run_cmd(args, device_serial=device_serial, timeout=180)
+        return "success" in res.stdout.lower()
+
+    def uninstall_package(
+        self,
+        package_name: str,
+        device_serial: Optional[str] = None,
+    ) -> bool:
+        """Desinstala um pacote do dispositivo."""
+        res = self.run_cmd(["uninstall", package_name], device_serial=device_serial)
+        return "success" in res.stdout.lower()
+
+    def clear_app_data(
+        self,
+        package_name: str,
+        device_serial: Optional[str] = None,
+    ) -> bool:
+        """Limpa cache e dados de um aplicativo."""
+        res = self.run_cmd(["shell", "pm", "clear", package_name], device_serial=device_serial)
+        return "success" in res.stdout.lower()
+
+    def launch_package(
+        self,
+        package_name: str,
+        device_serial: Optional[str] = None,
+    ) -> bool:
+        """Inicia um aplicativo no dispositivo via Monkey launcher intent."""
+        res = self.run_cmd(
+            ["shell", "monkey", "-p", package_name, "-c", "android.intent.category.LAUNCHER", "1"],
+            device_serial=device_serial,
+        )
+        return res.returncode == 0
+
+    def take_screenshot(
+        self,
+        local_output_path: Path,
+        device_serial: Optional[str] = None,
+    ) -> bool:
+        """Captura a tela do dispositivo e salva em arquivo local PNG."""
+        remote_tmp = "/sdcard/screenshot_tmp.png"
+        self.run_cmd(["shell", "screencap", "-p", remote_tmp], device_serial=device_serial)
+        local_output_path.parent.mkdir(parents=True, exist_ok=True)
+        ok = self.pull(remote_tmp, str(local_output_path.resolve()), device_serial=device_serial)
+        self.run_cmd(["shell", "rm", "-f", remote_tmp], device_serial=device_serial)
+        return ok

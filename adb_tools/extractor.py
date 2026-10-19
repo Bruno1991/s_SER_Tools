@@ -20,6 +20,9 @@ class ExtractedApkResult:
     has_dex: bool
 
 
+ExtractedPackage = ExtractedApkResult
+
+
 class ApkExtractor:
     """Gerencia a busca, download e validação de integridade de APKs."""
 

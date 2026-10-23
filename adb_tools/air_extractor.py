@@ -43,6 +43,14 @@ class AirAppInfo:
     all_swfs: List[Tuple[str, int]] = field(default_factory=list)  # (caminho_no_apk, tamanho)
     all_assets_count: int = 0
 
+    @property
+    def name(self) -> Optional[str]:
+        return self.app_name
+
+    @property
+    def main_swf(self) -> Optional[str]:
+        return self.main_swf_name
+
 
 @dataclass
 class AirExtractorResult:
@@ -57,6 +65,14 @@ class AirExtractorResult:
     total_files_extracted: int
     success: bool
     error_message: Optional[str] = None
+
+    @property
+    def info(self) -> AirAppInfo:
+        return self.app_info
+
+    @property
+    def swf_files(self) -> List[Path]:
+        return self.all_swf_files
 
 
 def parse_swf_header(data: bytes) -> Optional[SwfHeaderInfo]:
@@ -446,3 +462,12 @@ class AirExtractor:
 
         report_file.write_text("\n".join(lines), encoding="utf-8")
         return report_file
+
+    @classmethod
+    def extract_air_app(
+        cls,
+        apk_path: Path,
+        output_dir: Optional[Path] = None,
+    ) -> AirExtractorResult:
+        """Alias para extract_air_assets."""
+        return cls.extract_air_assets(apk_path, output_dir=output_dir)

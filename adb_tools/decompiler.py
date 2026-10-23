@@ -27,6 +27,18 @@ class DecompileResult:
     air_info: Optional[AirAppInfo] = None
     air_result_dir: Optional[Path] = None
 
+    @property
+    def has_gradle(self) -> bool:
+        return (self.output_dir / "build.gradle").exists() or (self.output_dir / "app" / "build.gradle").exists()
+
+    @property
+    def has_manifest(self) -> bool:
+        return self.manifest_file is not None and self.manifest_file.is_file()
+
+    @property
+    def total_files(self) -> int:
+        return self.total_files_count
+
 
 class JavaEnvironment:
     """Detecta e configura o ambiente de execução Java (JRE/JDK)."""
@@ -170,13 +182,20 @@ class ApkDecompiler:
 
         return None
 
+    def resolve_target(self, target: str, base_search_dir: Optional[Path] = None) -> Path:
+        """Resolve e valida o caminho do APK a partir de caminho direto, pacote ou busca."""
+        apk = self.locate_apk(target, base_search_dir=base_search_dir)
+        if not apk or not apk.is_file():
+            raise FileNotFoundError(f"APK correspondente a '{target}' não foi encontrado.")
+        return apk
+
     def decompile(
         self,
         apk_path: Path,
         output_dir: Optional[Path] = None,
         export_gradle: bool = True,
         show_bad_code: bool = True,
-        timeout: int = 300,
+        timeout: int = 900,
     ) -> DecompileResult:
         """Executa a descompilação completa de um APK para código Java e recursos XML."""
         if not self.jadx.is_installed():
@@ -194,8 +213,11 @@ class ApkDecompiler:
             )
 
         if output_dir is None:
-            apk_stem = apk_path.stem
-            output_dir = Path(__file__).resolve().parent.parent / "decompiled_sources" / apk_stem
+            if apk_path.stem.lower() in ("base", "split_config") and apk_path.parent.name.lower() not in ("extracted_apks", "apks", ".", ""):
+                folder_name = apk_path.parent.name
+            else:
+                folder_name = apk_path.stem
+            output_dir = Path(__file__).resolve().parent.parent / "decompiled_sources" / folder_name
 
         output_dir.mkdir(parents=True, exist_ok=True)
 
@@ -206,6 +228,12 @@ class ApkDecompiler:
         if show_bad_code:
             cmd.append("--show-bad-code")
         cmd.append(str(apk_path))
+
+        # Se for base.apk em uma pasta de Split APKs, incluir os splits para descompilação integrada
+        if apk_path.name.lower() == "base.apk":
+            for split_apk in sorted(apk_path.parent.glob("split_*.apk")):
+                if split_apk.is_file() and split_apk.resolve() != apk_path.resolve():
+                    cmd.append(str(split_apk.resolve()))
 
         env = os.environ.copy()
         env["JAVA_HOME"] = str(java_home)
@@ -326,3 +354,24 @@ class ApkDecompiler:
 
         subprocess.Popen(cmd, env=env)
         return True
+
+    def decompile_apk(
+        self,
+        apk_path: Path,
+        output_dir: Optional[Path] = None,
+        export_gradle: bool = True,
+        show_bad_code: bool = True,
+        timeout: int = 900,
+    ) -> DecompileResult:
+        """Alias para decompile."""
+        return self.decompile(
+            apk_path=apk_path,
+            output_dir=output_dir,
+            export_gradle=export_gradle,
+            show_bad_code=show_bad_code,
+            timeout=timeout,
+        )
+
+    def open_gui(self, apk_path: Optional[Path] = None) -> bool:
+        """Alias para launch_gui."""
+        return self.launch_gui(apk_path)

@@ -28,6 +28,22 @@ class FfdecExportResult:
     stdout: str = ""
     error_message: Optional[str] = None
 
+    @property
+    def total_files(self) -> int:
+        return self.total_files_count
+
+    @property
+    def has_scripts(self) -> bool:
+        return self.scripts_count > 0
+
+    @property
+    def has_images(self) -> bool:
+        return self.images_count > 0
+
+    @property
+    def has_sounds(self) -> bool:
+        return self.sounds_count > 0
+
 
 class FfdecManager:
     """Gerencia a instalação e execução do JPEXS Free Flash Decompiler (FFDec)."""
@@ -259,3 +275,26 @@ class FfdecManager:
             stderr=subprocess.DEVNULL,
         )
         return proc
+
+    def resolve_target(self, target: str, base_search_dir: Optional[Path] = None) -> Path:
+        """Localiza e valida um arquivo SWF a partir do alvo especificado."""
+        swf = self.locate_swf(target, base_search_dir=base_search_dir)
+        if not swf or not swf.is_file():
+            raise FileNotFoundError(f"Arquivo SWF correspondente a '{target}' não foi encontrado.")
+        return swf
+
+    def export_all(
+        self,
+        swf_path: Path,
+        output_dir: Optional[Path] = None,
+        formats: Optional[List[str]] = None,
+        timeout: int = 600,
+    ) -> FfdecExportResult:
+        """Alias para export_swf."""
+        if output_dir is None:
+            output_dir = swf_path.parent / "exported"
+        return self.export_swf(swf_path, output_dir=output_dir, formats=formats, timeout=timeout)
+
+    def open_gui(self, swf_path: Optional[Path] = None):
+        """Alias para launch_gui."""
+        return self.launch_gui(swf_path)

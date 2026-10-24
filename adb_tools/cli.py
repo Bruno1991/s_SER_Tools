@@ -12,6 +12,7 @@ from .air_extractor import AirExtractor
 from .decompiler import ApkDecompiler
 from .extractor import ApkExtractor
 from .ffdec_manager import FfdecManager
+from .tunein_extractor import run_full_extraction
 
 
 def format_bytes(size: int) -> str:
@@ -433,6 +434,9 @@ def run_cli() -> int:
     shot_p = subparsers.add_parser("screenshot", help="Captura tela do dispositivo")
     shot_p.add_argument("out", nargs="?", help="Arquivo de destino (opcional)", default=None)
 
+    tunein_p = subparsers.add_parser("tunein-extract", help="Extrai catálogo e links de streaming do TuneIn Radio")
+    tunein_p.add_argument("--count", "-c", type=int, default=1500, help="Quantidade máxima de estações (padrão: 1500)")
+
     args = parser.parse_args()
 
     client = AdbClient(adb_path=args.adb)
@@ -487,5 +491,9 @@ def run_cli() -> int:
     elif args.command == "screenshot":
         out_p = Path(args.out) if args.out else None
         return cmd_screenshot(client, out_path=out_p, serial=args.serial)
+    elif args.command == "tunein-extract":
+        res = run_full_extraction(max_stations=args.count)
+        print(f"\n[+] Extração concluída com sucesso! Total de {res['metadata']['total_active_streams']} streams ativos salvos.")
+        return 0
 
     return 0

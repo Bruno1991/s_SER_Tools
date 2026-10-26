@@ -1,2 +1,5 @@
-# Dependência opcional para emulação e jogos contra os bots do Chess.com:
-chess>=1.11.0
+# s_SER_Tools - Suíte Universal de Engenharia Reversa e Auditoria de Software
+rich>=13.7.0
+pefile>=2024.8.26
+pytest>=8.0.0
+requests>=2.31.0

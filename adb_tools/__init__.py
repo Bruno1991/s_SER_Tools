@@ -1,26 +1,24 @@
-"""s_ADB_Tools - Canivete Suíço Universal de Automação, Extração ADB e Engenharia Reversa para Android."""
+"""s_ADB_Tools Facade - Mantido para compatibilidade total com a suíte s_SER_Tools."""
 
-from .adb_client import AdbClient, AdbDevice
-from .air_extractor import AirAppInfo, AirExtractor, AirExtractorResult
-from .decompiler import ApkDecompiler, DecompileResult
-from .extractor import ApkExtractor, ExtractedPackage
-from .ffdec_manager import FfdecExportResult, FfdecManager
-from .tunein_extractor import TuneInRadioExtractor, run_full_extraction
+from ser_tools.android.adb_client import AdbClient, AdbDevice
+from ser_tools.android.air_extractor import AirAppInfo, AirExtractor, AirExtractorResult, parse_swf_header
+from ser_tools.android.decompiler import ApkDecompiler, DecompileResult
+from ser_tools.android.extractor import ApkExtractor, ExtractedPackage
+from ser_tools.android.ffdec_manager import FfdecExportResult, FfdecManager
 
-__version__ = "2.0.0"
+__version__ = "3.0.0"
 
 __all__ = [
     "AdbClient",
     "AdbDevice",
-    "ApkExtractor",
-    "ExtractedPackage",
+    "AirAppInfo",
+    "AirExtractor",
+    "AirExtractorResult",
+    "parse_swf_header",
     "ApkDecompiler",
     "DecompileResult",
-    "AirExtractor",
-    "AirAppInfo",
-    "AirExtractorResult",
-    "FfdecManager",
+    "ApkExtractor",
+    "ExtractedPackage",
     "FfdecExportResult",
-    "TuneInRadioExtractor",
-    "run_full_extraction",
+    "FfdecManager",
 ]

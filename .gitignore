@@ -5,8 +5,14 @@ __pycache__/
 env/
 venv/
 *.log
+.env
+.ser_temp/
+reports/*
+!reports/.gitkeep
 tools/jadx/
 tools/ffdec/
 tools/*.zip
 decompiled_sources/
 extracted_apks/
+capturas/*.png
+engineering-library/
